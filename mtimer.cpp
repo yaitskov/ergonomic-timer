@@ -5,6 +5,9 @@
 
 typedef unsigned char b;
 typedef int ms;
+
+#define DIF(a,b) ((int)a - (int)(b))
+
 class HumanTime {
 private:
   ms _ms;
@@ -26,6 +29,22 @@ public:
       };
     }
   }
+
+  int compare(const HumanTime& t2) {
+    int d = DIF(_hour,t2._hour);
+    if (!d) {
+      d = DIF(_min, t2._min);
+      if (!d) {
+        d = DIF(_sec, t2._sec);
+        if (!d) {
+          d = DIF(_ms, t2._ms);
+        }
+      }
+    }
+    return d;
+  }
+
+  //bool operator>
 };
 
 
