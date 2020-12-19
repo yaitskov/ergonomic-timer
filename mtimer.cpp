@@ -83,6 +83,7 @@ ISR(TIMER0_OVF_vect) {
 volatile uint8_t historyPortB = 0xFF;
 
 ISR(PCINT0_vect) { // btn int
+  // xor hack to avoid double exec on up/down
   b changeBits = PINB ^ historyPortB;
   historyPortB = PINB;
 
