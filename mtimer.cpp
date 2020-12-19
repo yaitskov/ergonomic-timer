@@ -5,7 +5,7 @@
 // #include <stdio.h>
 
 typedef unsigned char b;
-typedef int ms;
+typedef unsigned int ms;
 typedef int ps;
 
 #define DIF(a,b) ((int) a - (int) b)
@@ -13,43 +13,31 @@ typedef int ps;
 class HumanTime {
 private:
   ps _ps;
-  ms _ms;
-  b _sec;
-  b _min;
-  b _hour;
+  ms _msInMin; // 1000 * 60
+  int _minInDay; // 24 * 60
 public:
   // HumanTime() : _ps(0), _ms(0), _sec(0), _min(0), _hour(0) {}
   void tick(ms msTicks, ps psTicks) {
     _ps += psTicks;
     if (_ps > 999) {
-      ++_ms;
+      ++_msInMin;
       _ps -= 1000;
     }
-    _ms += msTicks;
-    while (_ms > 999) {
-      _ms = _ms - 1000;
-      if (++_sec > 59) {
-        _sec = 0;
-        if (++_min > 59) {
-          _min = 0;
-          _hour = (_hour+1) % 24;
-        }
+    _msInMin += msTicks;
+    while (_msInMin >= 60000U) {
+      _msInMin = _msInMin - 60000U;
+      if (++_minInDay >= 24 * 60) {
+        _minInDay = 0;
       };
     }
   }
 
   int compare(const HumanTime& t2) const {
-    int d = DIF(_hour,t2._hour);
+    int d = DIF(_minInDay,t2._minInDay);
     if (!d) {
-      d = DIF(_min, t2._min);
+      d = DIF(_msInMin, t2._msInMin);
       if (!d) {
-        d = DIF(_sec, t2._sec);
-        if (!d) {
-          d = DIF(_ms, t2._ms);
-          if (!d) {
-            d = DIF(_ps, t2._ps);
-          }
-        }
+        d = DIF(_ps, t2._ps);
       }
     }
     return d;
