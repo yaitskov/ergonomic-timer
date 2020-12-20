@@ -4,59 +4,73 @@
 #include <util/delay.h>
 #include <avr/interrupt.h>
 
-typedef unsigned char b;
-typedef unsigned int ms;
-typedef unsigned int mcs;
-typedef unsigned int minute;
+typedef char b;
+typedef int ms;
+typedef int mcs;
+typedef int minute;
 
-#define DIF(a,b) ((int) a - (int) b)
-
-#define LAST_MIN_IN_DAY (24U * 60U - 1U)
-#define LAST_MS_IN_MIN (60U * 1000U - 1U)
 
 class HumanTime {
-private:
-  minute _minInDay; // 24 * 60
-  ms _msInMin; // 1000 * 60
-  mcs _microSecs;
 public:
-  HumanTime(int minInDay, ms msInMin, mcs microSecs)
-    : _minInDay(minInDay), _msInMin(msInMin), _microSecs(microSecs) {}
-  void tick(ms msTicks, mcs psTicks) {
-    _microSecs += psTicks;
-    if (_microSecs > 999) {
-      ++_msInMin;
-      _microSecs -= 1000;
-    }
-    _msInMin += msTicks;
-    while (_msInMin > LAST_MS_IN_MIN) {
-      _msInMin = _msInMin - 60000U;
-      if (++_minInDay > LAST_MIN_IN_DAY) {
-        _minInDay = 0;
-      };
-    }
-  }
+	minute _minInDay; // 24 * 60
+	b _secs; // 60
+	ms _ms; // 1000 
+	mcs _microSecs; // 1000
+public:
+	HumanTime(minute minInDay, b seconds, ms miliseconds, mcs microSecs)
+		: _minInDay(minInDay), _secs(seconds), _ms(miliseconds), _microSecs(microSecs) {}
+	void tick(ms msTicks, mcs psTicks) {
+		_microSecs += psTicks;
+		if (_microSecs > 999) {
+			++_ms;
+			_microSecs -= 1000;
+		}
+		_ms += msTicks;
+		while (_ms > 999) {
+			_ms = _ms - 1000;
+			if (++_secs > 59) {
+				_secs -= 60;
+				if (++_minInDay >= 24 * 60) {
+					_minInDay = 24 * 60;
+				};	
+			}	
+		}
+	}
 
-  int compare(const HumanTime& t2) const {
-    int d = DIF(_minInDay,t2._minInDay);
-    if (!d) {
-      d = DIF(_msInMin, t2._msInMin);
-      if (!d) {
-        d = DIF(_microSecs, t2._microSecs);
-      }
-    }
-    return d;
-  }
+	int compare(const HumanTime& t2) const {
+		int d = _minInDay - t2._minInDay;
+		if (!d) {
+			d = _secs - t2._secs;
+			if (!d) {
+				d = _ms - t2._ms;
+				if (!d) {
+					d = _microSecs - t2._microSecs;
+				}
+			}
+		}
+		return d;
+	}
+	
+	bool isNoise300ms(const HumanTime& t2) const {
+		int d = _ms - t2._ms;
+		if (d < 0) {
+			d *= -1;
+		}
+		return _minInDay == t2._minInDay 
+			&& _secs == t2._secs
+			&& d < 300;
+	}
 
-  bool operator>(const HumanTime& t2) const {
-    return compare(t2) > 0;
-  }
+	bool operator>(const HumanTime& t2) const {
+		return compare(t2) > 0;
+	}
 };
 
 
-HumanTime wallClock(0, 0, 0);
-HumanTime turnOnAfter(0, 0, 0);
-HumanTime turnOffAfter(LAST_MIN_IN_DAY, LAST_MS_IN_MIN, 0);
+HumanTime wallClock(0, 0, 0, 0);
+HumanTime turnOnAfter(0, 0, 0, 0);
+HumanTime lastBtnPress(0, 0, 0, 0);
+HumanTime turnOffAfter(24 * 60 - 1, 59, 0, 0);
 
 #define PAUSE_SET 1
 b stateFlags = 0;
@@ -75,63 +89,66 @@ b stateFlags = 0;
 #define TIMER_PERIOD_MS ((int) (TIMER_PERIOD * 1000))
 #define TIMER_PERIOD_PS ((int) (1000 * (TIMER_PERIOD * 1000 - TIMER_PERIOD_MS)))
 
-
+// wall clock {wallClock._minInDay} {wallClock._msInMin} {wallClock._microSecs}	
 ISR(TIMER0_OVF_vect) {
-  wallClock.tick(TIMER_PERIOD_MS, TIMER_PERIOD_PS);
+	wallClock.tick(TIMER_PERIOD_MS, TIMER_PERIOD_PS);
 }
 
-volatile uint8_t historyPortB = 0xFF;
+void buttonPressed() {
+	b changeBits = PINB ^ 0xff;
+	if (lastBtnPress.isNoise300ms(wallClock)) {
+		return;
+	}		
+	if (changeBits & TOGGLE_PIN) {
+		if (wallClock > turnOnAfter && turnOffAfter > wallClock) {
+			// turn off because light is on; off at {turnOffAfter._secs} {turnOffAfter._ms} {turnOffAfter._microSecs}
+			turnOffAfter = wallClock;
+		} else {
+			// consequent on -> reset
+			turnOnAfter = wallClock = HumanTime(0, 0, 0, 0);
+			turnOffAfter = HumanTime(24 * 60 - 1, 59, 0, 0);
+		}
+		lastBtnPress = wallClock;
+	} else if (changeBits & PAUSE_BTN_PIN) {
+		stateFlags ^= PAUSE_SET;
+		lastBtnPress = wallClock;
+	}
+}
 
-ISR(PCINT0_vect) { // btn int
-  // xor hack to avoid double exec on up/down
-  b changeBits = PINB ^ historyPortB;
-  historyPortB = PINB;
-
-  if (changeBits & TOGGLE_PIN) {
-    if (wallClock > turnOnAfter && turnOffAfter > wallClock) {
-      // turn off because light is on
-      turnOffAfter = wallClock;
-    } else {
-      // consequent on -> reset
-      turnOnAfter = wallClock = HumanTime(0,0,0);
-      turnOffAfter = HumanTime(LAST_MIN_IN_DAY, LAST_MS_IN_MIN, 0);
-    }
-  } else if (changeBits & PAUSE_BTN_PIN) {
-    stateFlags ^= PAUSE_SET;
-  }
+ISR(PCINT0_vect) { 
+	buttonPressed();	
 }
 
 int main(void) {
-  TCCR0B |= PRESCALE_BITS;
-  TCNT0 = 0; // reset counter 0
-  TIMSK |= 1; // enable timer overflows bit TOIE0
-  GIMSK |= (1 << PCIE);     // set PCIE0 to enable PCMSK0 scan
-  // PCICR |= (1 << PCIE);     // set PCIE0 to enable PCMSK0 scan
-  PCMSK |= (1 << PCINT0);   // set PCINT0 to trigger an interrupt on state change
+	TCCR0B |= PRESCALE_BITS;
+	TCNT0 = 0; // reset counter 0
+	TIMSK |= 0b10; // enable timer overflows bit TOIE0
+	GIMSK |= (1 << PCIE);     // set PCIE0 to enable PCMSK0 scan	
+	PCMSK |=  TOGGLE_PIN |  PAUSE_BTN_PIN; // PCINT0 PCINT1
 
-  DDRB |= POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN;
-  PORTB |= ~(POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN);
+	DDRB |= POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN;
+	PORTB = ~(POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN);
 
-  sei();
+	sei();
 
-  while (1) {
-    if (stateFlags & PAUSE_SET) {
-      PORTB |= PAUSE_LED_PIN;
-      _delay_ms(300);
-      PORTB &= ~(POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN);
-      _delay_ms(700);
-    } else {
-      PORTB &= ~PAUSE_LED_PIN;
-      if (wallClock > turnOnAfter && turnOffAfter > wallClock) {
-        PORTB &= ~POWER_LED_PIN;
-        _delay_ms(300);
-        PORTB |= POWER_PIN | POWER_LED_PIN;
-      } else {
-        PORTB |= POWER_LED_PIN;
-        _delay_ms(300);
-        PORTB &= ~(POWER_PIN | POWER_LED_PIN);
-      }
-      _delay_ms(700);
-    }
-  }
+	while (1) {
+		if (stateFlags & PAUSE_SET) {
+			PORTB |= PAUSE_LED_PIN;
+			_delay_ms(300);
+			PORTB &= ~(POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN);
+			_delay_ms(700);
+		} else {
+			PORTB &= ~PAUSE_LED_PIN;
+			if (wallClock > turnOnAfter && turnOffAfter > wallClock) {
+				PORTB &= ~POWER_LED_PIN;
+				_delay_ms(300);
+				PORTB |= POWER_PIN | POWER_LED_PIN;
+			} else {
+				PORTB |= POWER_LED_PIN;
+				_delay_ms(300);
+				PORTB &= ~(POWER_PIN | POWER_LED_PIN);
+			}
+			_delay_ms(700);
+		}
+	}
 }
