@@ -79,6 +79,10 @@ public:
 	bool operator>(const HumanTime& t2) const {
 		return compare(t2) > 0;
 	}
+	
+	bool operator>=(const HumanTime& t2) const {
+		return compare(t2) >= 0;
+	}
 };
 
 
@@ -178,7 +182,7 @@ int main(void) {
 			}
 			PORTB &= ~POWER_PIN;
 		} else {
-			if (wallClock > turnOnAfter && turnOffAfter > wallClock) {			
+			if (wallClock >= turnOnAfter && turnOffAfter > wallClock) {			
 				// turn on power at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
 				powerLedBlinker._maxOffTicks = 3;
 				powerLedBlinker._maxOnTicks = 7;
