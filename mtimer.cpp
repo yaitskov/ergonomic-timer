@@ -51,14 +51,14 @@ public:
 		return d;
 	}
 	
-	bool isNoise300ms(const HumanTime& t2) const {
+	bool isNoise600ms(const HumanTime& t2) const {
 		int d = _ms - t2._ms;
 		if (d < 0) {
 			d *= -1;
 		}
 		return _minInDay == t2._minInDay 
 			&& _secs == t2._secs
-			&& d < 300;
+			&& d < 600;
 	}
 
 	bool operator>(const HumanTime& t2) const {
@@ -96,21 +96,29 @@ ISR(TIMER0_OVF_vect) {
 
 void buttonPressed() {
 	b changeBits = PINB ^ 0xff;
-	if (lastBtnPress.isNoise300ms(wallClock)) {
+	if (lastBtnPress.isNoise600ms(wallClock)) {
 		return;
 	}		
-	if (changeBits & TOGGLE_PIN) {
+	if (changeBits & TOGGLE_PIN 
+		&& stateFlags ^ PAUSE_SET /* ignore toggle button on pause */) {
 		if (wallClock > turnOnAfter && turnOffAfter > wallClock) {
 			// turn off because light is on; off at {turnOffAfter._secs} {turnOffAfter._ms} {turnOffAfter._microSecs}
 			turnOffAfter = wallClock;
+			PORTB &= ~POWER_PIN; // immediately turn off power because main loop delay destruction
 		} else {
 			// consequent on -> reset
 			turnOnAfter = wallClock = HumanTime(0, 0, 0, 0);
 			turnOffAfter = HumanTime(24 * 60 - 1, 59, 0, 0);
+			PORTB |= POWER_PIN;
 		}
 		lastBtnPress = wallClock;
 	} else if (changeBits & PAUSE_BTN_PIN) {
-		stateFlags ^= PAUSE_SET;
+		if (stateFlags ^= PAUSE_SET) {
+			PORTB &= ~POWER_PIN;
+		} else if (wallClock > turnOnAfter && turnOffAfter > wallClock) {
+			PORTB |= POWER_PIN;	
+		}
+		PORTB ^= PAUSE_LED_PIN;
 		lastBtnPress = wallClock;
 	}
 }
@@ -118,6 +126,9 @@ void buttonPressed() {
 ISR(PCINT0_vect) { 
 	buttonPressed();	
 }
+
+#define MAIN_DELAY_MS 1400
+#define SLAVE_DELAY_MS 350
 
 int main(void) {
 	TCCR0B |= PRESCALE_BITS;
@@ -127,28 +138,27 @@ int main(void) {
 	PCMSK |=  TOGGLE_PIN |  PAUSE_BTN_PIN; // PCINT0 PCINT1
 
 	DDRB |= POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN;
-	PORTB = ~(POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN);
+	PORTB = ~(/*POWER_PIN is on*/ POWER_LED_PIN | PAUSE_LED_PIN);
 
 	sei();
 
 	while (1) {
 		if (stateFlags & PAUSE_SET) {
 			PORTB |= PAUSE_LED_PIN;
-			_delay_ms(300);
-			PORTB &= ~(POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN);
-			_delay_ms(700);
+			_delay_ms(SLAVE_DELAY_MS);
+			PORTB &= ~(POWER_LED_PIN | PAUSE_LED_PIN);
 		} else {
 			PORTB &= ~PAUSE_LED_PIN;
 			if (wallClock > turnOnAfter && turnOffAfter > wallClock) {
 				PORTB &= ~POWER_LED_PIN;
-				_delay_ms(300);
-				PORTB |= POWER_PIN | POWER_LED_PIN;
+				_delay_ms(SLAVE_DELAY_MS);
+				PORTB |= POWER_LED_PIN;
 			} else {
 				PORTB |= POWER_LED_PIN;
-				_delay_ms(300);
-				PORTB &= ~(POWER_PIN | POWER_LED_PIN);
-			}
-			_delay_ms(700);
+				_delay_ms(SLAVE_DELAY_MS);
+				PORTB &= ~POWER_LED_PIN;
+			}			
 		}
+		_delay_ms(MAIN_DELAY_MS);			
 	}
 }
