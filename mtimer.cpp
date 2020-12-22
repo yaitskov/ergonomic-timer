@@ -34,7 +34,7 @@ public:
 public:
 	HumanTime(minute minInDay, b seconds, ms miliseconds, mcs microSecs)
 		: _minInDay(minInDay), _secs(seconds), _ms(miliseconds), _microSecs(microSecs) {}
-	void tick(ms msTicks, mcs psTicks) {
+	b tick(ms msTicks, mcs psTicks) {
 		_microSecs += psTicks;
 		if (_microSecs > 999) {
 			++_ms;
@@ -47,9 +47,55 @@ public:
 				_secs -= 60;
 				if (++_minInDay >= 24 * 60) {
 					_minInDay = 24 * 60;
-				};	
+					return 1;
+				};					
 			}	
 		}
+		return 0;
+	}
+	
+	void reset() {
+		_secs = _minInDay = _microSecs = _ms = 0; 		
+	}
+	
+	HumanTime operator-(const HumanTime& t2) const {
+		mcs mcsD = _microSecs - t2._microSecs;
+		ms msD = _ms - t2._ms;
+		if (mcsD < 0) {
+			mcsD += 1000;
+			--msD;
+		}
+		b secsD = _secs - t2._secs;
+		if (msD < 0) {
+			msD += 1000;
+			--secsD;
+		}
+		minute minD = _minInDay - t2._minInDay;
+		if (secsD < 0) {
+			--minD;
+			secsD += 60;
+		}
+		return HumanTime(minD, secsD, msD, mcsD);
+	}
+	
+	HumanTime operator+(const HumanTime& t2) const {
+		mcs mcsD = _microSecs + t2._microSecs;
+		ms msD = _ms + t2._ms;
+		if (mcsD > 999) {
+			mcsD -= 1000;
+			++msD;
+		}
+		b secsD = _secs + t2._secs;
+		if (msD > 999) {
+			msD -= 1000;
+			++secsD;
+		}
+		minute minD = _minInDay + t2._minInDay;
+		if (secsD > 59) {
+			++minD;
+			secsD -= 60;
+		}
+		return HumanTime(minD, secsD, msD, mcsD);
 	}
 
 	int compare(const HumanTime& t2) const {
@@ -121,15 +167,20 @@ HumanTime wallClock(0, 0, 0, 0);
 HumanTime turnOnAfter(0, 0, 0, 0);
 HumanTime lastBtnPress(0, 0, 0, 0);
 HumanTime turnOffAfter(24 * 60 - 1, 59, 0, 0);
+HumanTime pausedAt(0, 0, 0, 0);
+HumanTime pauseInDay(0, 0, 0, 0);
+///HumanTime effectiveTurnOff(0, 0, 0, 0);
 BlinkPortB powerLedBlinker(3, POWER_LED_PIN, 7);
 BlinkPortB pauseLedBlinker(1, PAUSE_LED_PIN, 0);
 
 
-b stateFlags = 0;
+volatile b stateFlags = 0;
 
 // wall clock {wallClock._secs} {wallClock._ms} {wallClock._microSecs}	
 ISR(TIMER0_OVF_vect) {
-	wallClock.tick(TIMER_PERIOD_MS, TIMER_PERIOD_PS);
+	if (wallClock.tick(TIMER_PERIOD_MS, TIMER_PERIOD_PS)) {
+		pauseInDay.reset();
+	}
 	powerLedBlinker.tick();
 	pauseLedBlinker.tick();
 }
@@ -146,12 +197,19 @@ void buttonPressed() {
 			turnOffAfter = wallClock;		
 		} else {
 			// consequent on -> reset; reset at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
-			turnOnAfter = wallClock = HumanTime(0, 0, 0, 0);
+			turnOnAfter.reset();
+			wallClock.reset();
 			turnOffAfter = HumanTime(24 * 60 - 1, 59, 0, 0);
 		}
 		lastBtnPress = wallClock;
 	} else if (changeBits & PAUSE_BTN_PIN) {
-		stateFlags ^= PAUSE_SET;  // set pause turn at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
+		// set pause turn at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
+		if (stateFlags ^= PAUSE_SET) {
+			pausedAt = wallClock;
+		} else {
+			pausedAt = wallClock - pausedAt;
+			pauseInDay = pauseInDay + pausedAt;
+		}	
 		lastBtnPress = wallClock;
 	}
 }
@@ -177,12 +235,20 @@ int main(void) {
 			powerLedBlinker._maxOnTicks = 0;
 			pauseLedBlinker._maxOffTicks = pauseLedBlinker._maxOnTicks = 2;						
 			powerLedBlinker._onTicks = 0;
-			if (PORTB & POWER_PIN) {
+			if (PORTB & POWER_PIN) {				
 				pauseLedBlinker._onTicks = 0;
+			}
+			// auto reset
+			if (wallClock._minInDay - pausedAt._minInDay >= 50) {
+				cli();
+				stateFlags &= ~PAUSE_SET;
+				pauseInDay = wallClock - pausedAt;
+				sei();
 			}
 			PORTB &= ~POWER_PIN;
 		} else {
-			if (wallClock >= turnOnAfter && turnOffAfter > wallClock) {			
+			//effectiveTurnOff = turnOffAfter + pauseInDay;
+			if (wallClock >= turnOnAfter &&  turnOffAfter + pauseInDay > wallClock) {			
 				// turn on power at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
 				powerLedBlinker._maxOffTicks = 3;
 				powerLedBlinker._maxOnTicks = 7;
