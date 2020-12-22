@@ -240,10 +240,10 @@ int main(void) {
 			}
 			// auto reset
 			if (wallClock._minInDay - pausedAt._minInDay >= 50) {
-				cli();
+				//cli();
 				stateFlags &= ~PAUSE_SET;
 				pauseInDay = wallClock - pausedAt;
-				sei();
+				//sei();
 			}
 			PORTB &= ~POWER_PIN;
 		} else {
