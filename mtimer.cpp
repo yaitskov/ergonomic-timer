@@ -208,7 +208,9 @@ void buttonPressed() {
 			pausedAt = wallClock;
 		} else {
 			pausedAt = wallClock - pausedAt;
-			pauseInDay = pauseInDay + pausedAt;
+			if (wallClock > turnOnAfter && turnOffAfter + pauseInDay > wallClock) {
+				pauseInDay = pauseInDay + pausedAt;
+			}
 		}	
 		lastBtnPress = wallClock;
 	}
@@ -240,15 +242,15 @@ int main(void) {
 			}
 			// auto reset
 			if (wallClock._minInDay - pausedAt._minInDay >= 50) {
-				//cli();
 				stateFlags &= ~PAUSE_SET;
-				pauseInDay = wallClock - pausedAt;
-				//sei();
+				if (wallClock >= turnOnAfter && turnOffAfter + pauseInDay > wallClock) {			
+					pauseInDay = pauseInDay + (wallClock - pausedAt);
+				}
 			}
 			PORTB &= ~POWER_PIN;
 		} else {
 			//effectiveTurnOff = turnOffAfter + pauseInDay;
-			if (wallClock >= turnOnAfter &&  turnOffAfter + pauseInDay > wallClock) {			
+			if (wallClock >= turnOnAfter && turnOffAfter + pauseInDay > wallClock) {			
 				// turn on power at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
 				powerLedBlinker._maxOffTicks = 3;
 				powerLedBlinker._maxOnTicks = 7;
