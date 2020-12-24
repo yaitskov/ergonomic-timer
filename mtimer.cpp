@@ -46,7 +46,7 @@ public:
 			if (++_secs > 59) {
 				_secs -= 60;
 				if (++_minInDay >= 24 * 60) {
-					_minInDay = 24 * 60;
+					_minInDay -= 24 * 60;
 					return 1;
 				};					
 			}	
@@ -169,7 +169,6 @@ HumanTime lastBtnPress(0, 0, 0, 0);
 HumanTime turnOffAfter(24 * 60 - 1, 59, 0, 0);
 HumanTime pausedAt(0, 0, 0, 0);
 HumanTime pauseInDay(0, 0, 0, 0);
-///HumanTime effectiveTurnOff(0, 0, 0, 0);
 BlinkPortB powerLedBlinker(3, POWER_LED_PIN, 7);
 BlinkPortB pauseLedBlinker(1, PAUSE_LED_PIN, 0);
 
@@ -192,9 +191,10 @@ void buttonPressed() {
 	}		
 	if (changeBits & TOGGLE_PIN 
 		&& stateFlags ^ PAUSE_SET /* ignore toggle button on pause */) {
-		if (wallClock > turnOnAfter && turnOffAfter > wallClock) {
+		if (wallClock > turnOnAfter && turnOffAfter + pauseInDay > wallClock) {
 			// off at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
 			turnOffAfter = wallClock;		
+			pauseInDay.reset();
 		} else {
 			// consequent on -> reset; reset at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
 			turnOnAfter.reset();
@@ -226,7 +226,7 @@ int main(void) {
 	PCMSK |=  TOGGLE_PIN |  PAUSE_BTN_PIN; // PCINT0 PCINT1
 
 	DDRB |= POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN;	
-
+	PORTB |= ~(POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN);
 	sei();
 
 	while (1) {
