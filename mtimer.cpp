@@ -112,14 +112,11 @@ public:
 		return d;
 	}
 	
-	bool isNoise600ms(const HumanTime& t2) const {
-		int d = _ms - t2._ms;
-		if (d < 0) {
-			d *= -1;
-		}
-		return _minInDay == t2._minInDay 
-			&& _secs == t2._secs
-			&& d < 600;
+	bool isNoise(const HumanTime& t2) const {
+		HumanTime dif = t2 - *this;
+		return !dif._minInDay 
+			&& !dif._secs
+			&& dif._ms < 600;
 	}
 
 	bool operator>(const HumanTime& t2) const {
@@ -186,7 +183,7 @@ ISR(TIMER0_OVF_vect) {
 
 void buttonPressed() {
 	b changeBits = PINB ^ 0xff;
-	if (lastBtnPress.isNoise600ms(wallClock)) {
+	if (lastBtnPress.isNoise(wallClock)) {
 		return;
 	}		
 	if (changeBits & TOGGLE_PIN 
