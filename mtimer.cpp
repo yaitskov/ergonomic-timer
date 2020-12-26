@@ -2,6 +2,7 @@
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <util/delay.h>
 
 #define PAUSE_SET 1
 
@@ -16,8 +17,13 @@
 #define TIMER_PRESCALE 1024
 #define TIMER_OVERFLOW 256
 #define TIMER_PERIOD (TIMER_OVERFLOW * 1.0/(F_CPU / (1.0 * TIMER_PRESCALE)))
-#define TIMER_PERIOD_MS ((int) (TIMER_PERIOD * 1000))
-#define TIMER_PERIOD_PS ((int) (1000 * (TIMER_PERIOD * 1000 - TIMER_PERIOD_MS)))
+/*
+262 144mks : 1min 8sec faster on 50 min interval
+256 202mks : 30 sec slower on 1h interval
+258 183mks : ? on 1h interval 
+*/
+#define TIMER_PERIOD_MS 258 // 256 // 262 // 256 /// ((int) (TIMER_PERIOD * 1000))
+#define TIMER_PERIOD_PS 183 // 202 // 144 // 202 /// ((int) (1000 * (TIMER_PERIOD * 1000 - TIMER_PERIOD_MS)))
 
 typedef char b;
 typedef int ms;
@@ -177,6 +183,9 @@ ISR(TIMER0_OVF_vect) {
 	if (wallClock.tick(TIMER_PERIOD_MS, TIMER_PERIOD_PS)) {
 		pauseInDay.reset();
 	}
+	if (wallClock._minInDay >= 60) {
+		PORTB &= ~POWER_PIN;
+	}
 	powerLedBlinker.tick();
 	pauseLedBlinker.tick();
 }
@@ -192,10 +201,12 @@ void buttonPressed() {
 			// off at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
 			turnOffAfter = wallClock;		
 			pauseInDay.reset();
+			PORTB &= ~POWER_PIN;
 		} else {
 			// consequent on -> reset; reset at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
 			turnOnAfter.reset();
 			wallClock.reset();
+			PORTB |= POWER_PIN;
 			turnOffAfter = HumanTime(24 * 60 - 1, 59, 0, 0);
 		}
 		lastBtnPress = wallClock;
@@ -224,8 +235,8 @@ int main(void) {
 	GIMSK |= (1 << PCIE);     // set PCIE0 to enable PCMSK0 scan	
 	PCMSK |=  TOGGLE_PIN |  PAUSE_BTN_PIN; // PCINT0 PCINT1
 
-	DDRB |= POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN;	
-	PORTB |= ~(POWER_PIN | POWER_LED_PIN | PAUSE_LED_PIN);
+	DDRB |= POWER_PIN; // | POWER_LED_PIN | PAUSE_LED_PIN;	
+	PORTB |= ~(POWER_PIN); // | POWER_LED_PIN | PAUSE_LED_PIN);
 	sei();
 
 	while (1) {
@@ -254,7 +265,7 @@ int main(void) {
 				if (!(PORTB & POWER_PIN)) {
 					powerLedBlinker._onTicks = 0;
 				}
-				PORTB |= POWER_PIN;				
+				//PORTB |= POWER_PIN;				
 			} else {
 				// turn off power at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
 				powerLedBlinker._maxOffTicks = 7;
@@ -267,6 +278,6 @@ int main(void) {
 			pauseLedBlinker._maxOffTicks = 1;
 			pauseLedBlinker._maxOnTicks = 0;
 			pauseLedBlinker._onTicks = 0;
-		}		
+		}
 	}
 }
