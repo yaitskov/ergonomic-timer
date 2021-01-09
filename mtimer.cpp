@@ -30,7 +30,8 @@
 
 calibration for quartz oscillator 32khz 22mkf
 498ms       : 1h : 15s slower
-499ms 550   : 1h : ?
+499ms 550   : 1h : 3s  slower?
+499ms 998   : 1h :
 */
 #define TIMER_PERIOD_MS 499
 #define TIMER_PERIOD_MKS 550
