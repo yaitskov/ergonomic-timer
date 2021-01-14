@@ -29,13 +29,18 @@
 258 450mks :  2sec slower on 2h interval
 
 calibration for quartz oscillator 32khz 22mkf
-498ms       : 1h : 15s slower
-499ms 550   : 1h : 3s  slower?
-499ms 998   : 1h :
+498ms        : 1h : 15s slower
+499ms 550    : 1h : 3s  slower
+499ms 996    : 1h : 1s  slower = -3/3h   => -12/12h => -24/24h
+499ms 998    : 3h : 1s  slower =             -4/12h =>  -8/24h
+499ms 999  80: 12h  3s  slower =             -3/12h =>  -6/24h
+499ms 999 998: 20h  5s slower?                      =>  -5.6/24h
+500   003 000: 24h : ?
+502          : 24h  6min faster
 */
-#define TIMER_PERIOD_MS 499
-#define TIMER_PERIOD_MKS 550
-#define TIMER_PERIOD_NS  000
+#define TIMER_PERIOD_MS 500
+#define TIMER_PERIOD_MKS 3
+#define TIMER_PERIOD_NS  0
 typedef char b;
 typedef int ns;
 typedef int ms;
@@ -214,7 +219,7 @@ ISR(TIMER0_OVF_vect) {
 	if (wallClock.tick(TIMER_PERIOD_MS, TIMER_PERIOD_MKS, TIMER_PERIOD_NS)) {
 		//pauseInDay.reset();
 	}
-	if (wallClock._minInDay >= 60) { // 23 * 60) {
+	if (wallClock._minInDay >= 24*60) { // 23 * 60) {
 		PORTB &= ~POWER_PIN;
 	} 
 	//powerLedBlinker.tick();

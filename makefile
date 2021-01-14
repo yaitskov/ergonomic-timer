@@ -5,7 +5,7 @@ mtimer.hex: mtimer.cpp
 
 
 flash: mtimer.hex
-	avrdude -p attiny85 -B 128 -c usbasp -U flash:w:mtimer.hex:i -F -P usb	
+	avrdude -p attiny85 -B 128 -c usbasp -U flash:w:mtimer.hex:i -F -P usb 
 
 readfuseii: 
 	avrdude -v -p attiny85 -B 187 -c avrispmkII -U lfuse:r:-:h  -P usb
