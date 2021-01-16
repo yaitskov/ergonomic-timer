@@ -35,11 +35,13 @@ calibration for quartz oscillator 32khz 22mkf
 499ms 998    : 3h : 1s  slower =             -4/12h =>  -8/24h
 499ms 999  80: 12h  3s  slower =             -3/12h =>  -6/24h
 499ms 999 998: 20h  5s slower?                      =>  -5.6/24h
-500   003 000: 24h : ?
+500   003 000: 24h: 5s slower?
+500   015 000: 24h: 3s slower
+500   036 000: 24h: ?
 502          : 24h  6min faster
 */
 #define TIMER_PERIOD_MS 500
-#define TIMER_PERIOD_MKS 3
+#define TIMER_PERIOD_MKS 36
 #define TIMER_PERIOD_NS  0
 typedef char b;
 typedef int ns;
