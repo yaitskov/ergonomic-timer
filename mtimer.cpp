@@ -11,6 +11,7 @@
 #define POWER_PIN (1 << 1) // PB1
 #define TOGGLE_PIN (1 << 2)  // PB2
 // PB4 and PB3 are for quartz
+// PB5 is reset
 
 // 64 => period 500ms at 32khz
 // 64 * 256 => 16k operations between interruptions
@@ -37,11 +38,12 @@ calibration for quartz oscillator 32khz 22mkf
 499ms 999 998: 20h  5s slower?                      =>  -5.6/24h
 500   003 000: 24h: 5s slower?
 500   015 000: 24h: 3s slower
-500   036 000: 24h: ?
+500   036 000: 24h: 0.5s faster
+500   033 000: 48h:?
 502          : 24h  6min faster
 */
 #define TIMER_PERIOD_MS 500
-#define TIMER_PERIOD_MKS 36
+#define TIMER_PERIOD_MKS 33
 #define TIMER_PERIOD_NS  0
 typedef char b;
 typedef int ns;
@@ -77,8 +79,8 @@ public:
 			if (++_secs > 59) {
 				_secs -= 60;
 				if (++_minInDay >= 24 * 60) {
-					// _minInDay -= 24 * 60;
-					// return 1;
+					_minInDay -= 24 * 60;
+					return 1;
 				};					
 			}			
 		}
@@ -156,11 +158,9 @@ public:
 		return d;
 	}
 	
-	bool isNoise(const HumanTime& t2) const {
+	bool isNoise(const HumanTime& t2) const {        
 		HumanTime dif = t2 - *this;
-		return !dif._minInDay 			
-			&& !dif._secs
-			&& dif._ms <= 500;
+		return !dif._minInDay && dif._secs < 2;
 	}
 
 	bool operator>(const HumanTime& t2) const {
@@ -173,59 +173,25 @@ public:
 };
 
 
-//class BlinkPortB {
-//public:
-	//b _maxOffTicks;
-	//b _bitMask;
-	//b _maxOnTicks;
-	//b _offTicks;
-	//b _onTicks;	
-	//BlinkPortB (b maxOff, b bitMask, b maxOn) 
-		//: _maxOffTicks(maxOff), 
-			//_bitMask(bitMask),
-			//_maxOnTicks(maxOn) {}
-		//
-	//void tick() {
-		//if (!_onTicks && _maxOnTicks) { // zero start - turn on
-			//PORTB |= _bitMask;
-		//} else if (_onTicks >= _maxOnTicks) {
-			//if (!_offTicks) { // zero start - turn off
-				//PORTB &= ~_bitMask;
-			//} else if (_offTicks >= _maxOffTicks) {
-				//_onTicks = _offTicks = 0;				
-				//return;
-			//}
-			//++_offTicks;
-			//return;
-		//}
-		//++_onTicks;	
-		//return;
-	//}
-//};
-//
-
 HumanTime wallClock(0, 0, 0, 0, 0);
 HumanTime turnOnAfter(0, 0, 0, 0, 0);
 HumanTime lastBtnPress(0, 0, 0, 0, 0);
-HumanTime turnOffAfter(24 * 60 - 1, 59, 0, 0, 0);
+// assume turns on at 6 am. = turn on 0
+// assume turns off at 9 pm
+HumanTime turnOffAfter(15 * 60, 00, 0, 0, 0);
 HumanTime pausedAt(0, 0, 0, 0, 0);
 HumanTime pauseInDay(0, 0, 0, 0, 0);
-//BlinkPortB powerLedBlinker(3, POWER_LED_PIN, 7);
-//BlinkPortB pauseLedBlinker(1, PAUSE_LED_PIN, 0);
-
 
 volatile b stateFlags = 0;
 
 // wall clock {wallClock._secs} {wallClock._ms} {wallClock._microSecs}	
 ISR(TIMER0_OVF_vect) {
 	if (wallClock.tick(TIMER_PERIOD_MS, TIMER_PERIOD_MKS, TIMER_PERIOD_NS)) {
-		//pauseInDay.reset();
+		pauseInDay.reset();
 	}
-	if (wallClock._minInDay >= 24*60) { // 23 * 60) {
-		PORTB &= ~POWER_PIN;
-	} 
-	//powerLedBlinker.tick();
-	//pauseLedBlinker.tick();
+	//if (wallClock._minInDay >= 2*24*60) { // 23 * 60) {
+		//PORTB &= ~POWER_PIN;
+	//} 
 }
 
 void buttonPressed() {
@@ -233,29 +199,28 @@ void buttonPressed() {
 	if (lastBtnPress.isNoise(wallClock)) {
 		return;
 	}		
-	if (changeBits & TOGGLE_PIN 
-		&& stateFlags ^ PAUSE_SET /* ignore toggle button on pause */) {
-		//if (wallClock > turnOnAfter && turnOffAfter + pauseInDay > wallClock) {
-			//// off at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
-			//turnOffAfter = wallClock;		
-			//pauseInDay.reset();
-			//PORTB &= ~POWER_PIN;
-		//} else {
+	if ((changeBits & TOGGLE_PIN) && (stateFlags ^ PAUSE_SET)) {
+		if (wallClock >= turnOnAfter && turnOffAfter + pauseInDay > wallClock) {
+			// off at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
+			turnOffAfter = wallClock;					
+            pauseInDay.reset(); // it should be in else section but it makes impression that device doesn't react
+			// PORTB &= ~POWER_PIN;
+		} else {
 			// consequent on -> reset; reset at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
 			TCNT0 = 0;
-			//turnOnAfter.reset();
-			wallClock.reset();
-			PORTB |= POWER_PIN;
-			//turnOffAfter = HumanTime(24 * 60 - 1, 59, 0, 0, 0);
-		//}
+			turnOnAfter.reset();
+			wallClock.reset();            
+			//PORTB |= POWER_PIN;
+			turnOffAfter = HumanTime(15 * 60, 0, 0, 0, 0);
+		}
 		lastBtnPress = wallClock;
 	} else if (changeBits & PAUSE_BTN_PIN) {
 		// set pause turn at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
 		if (stateFlags ^= PAUSE_SET) {
 			pausedAt = wallClock;
-		} else {
-			pausedAt = wallClock - pausedAt;
-			if (wallClock > turnOnAfter && turnOffAfter + pauseInDay > wallClock) {
+		} else {			
+			if (pausedAt >= turnOnAfter && turnOffAfter + pauseInDay > pausedAt) {
+                pausedAt = wallClock - pausedAt;
 				pauseInDay = pauseInDay + pausedAt;
 			}
 		}	
@@ -274,49 +239,29 @@ int main(void) {
 	GIMSK |= (1 << PCIE);     // set PCIE0 to enable PCMSK0 scan	
 	PCMSK |=  TOGGLE_PIN |  PAUSE_BTN_PIN; // PCINT0 PCINT1
 
-	DDRB |= POWER_PIN; // | POWER_LED_PIN | PAUSE_LED_PIN;	
-	PORTB |= ~(POWER_PIN); // | POWER_LED_PIN | PAUSE_LED_PIN);
+	DDRB |= POWER_PIN;
+	PORTB |= ~(POWER_PIN); // pull up resistors
 	sei();
 
 	while (1) {
 		if (stateFlags & PAUSE_SET) {
-			//powerLedBlinker._maxOffTicks = 1;
-			//powerLedBlinker._maxOnTicks = 0;
-			//pauseLedBlinker._maxOffTicks = pauseLedBlinker._maxOnTicks = 2;						
-			//powerLedBlinker._onTicks = 0;
-			//if (PORTB & POWER_PIN) {				
-				//pauseLedBlinker._onTicks = 0;
-			//}
 			// auto reset
-			//if (wallClock._minInDay - pausedAt._minInDay >= 50) {
-				//stateFlags &= ~PAUSE_SET;
-				//if (wallClock >= turnOnAfter && turnOffAfter + pauseInDay > wallClock) {			
-					//pauseInDay = pauseInDay + (wallClock - pausedAt);
-				//}
-			//}
-			//PORTB &= ~POWER_PIN;
+			if (wallClock._minInDay - pausedAt._minInDay >= 50) {
+				stateFlags &= ~PAUSE_SET;
+				if (pausedAt >= turnOnAfter && turnOffAfter + pauseInDay > pausedAt) {			
+					pauseInDay = pauseInDay + (wallClock - pausedAt);
+				}
+			}
+			PORTB &= ~POWER_PIN;
 		} else {
 			//effectiveTurnOff = turnOffAfter + pauseInDay;
 			if (wallClock >= turnOnAfter && turnOffAfter + pauseInDay > wallClock) {			
 				// turn on power at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
-				//powerLedBlinker._maxOffTicks = 3;
-				//powerLedBlinker._maxOnTicks = 7;
-				//if (!(PORTB & POWER_PIN)) {
-					//powerLedBlinker._onTicks = 0;
-				//}
-				//PORTB |= POWER_PIN;				
+				PORTB |= POWER_PIN;
 			} else {
 				// turn off power at {wallClock._secs} {wallClock._ms} {wallClock._microSecs}
-				//powerLedBlinker._maxOffTicks = 7;
-				//powerLedBlinker._maxOnTicks = 3;
-				//if (PORTB & POWER_PIN) {
-					//powerLedBlinker._onTicks = 0;
-				//}
-				//PORTB &= ~POWER_PIN;
+				PORTB &= ~POWER_PIN;
 			}			
-			//pauseLedBlinker._maxOffTicks = 1;
-			//pauseLedBlinker._maxOnTicks = 0;
-			//pauseLedBlinker._onTicks = 0;
 		}
 	}
 }
